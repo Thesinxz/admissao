@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, FileText, Search, RefreshCw, Printer, ArrowLeft, Calendar, 
   Building, CheckCircle, ExternalLink, Download, Lock, LogOut, Settings, 
-  Save, Plus, Trash2, Sliders, Briefcase, Bus, ShieldCheck
+  Save, Plus, Trash2, Sliders, Briefcase, Bus, ShieldCheck, AlertTriangle
 } from 'lucide-react';
-import { getAdmissionsList } from '../../services/admissionService';
+import { getAdmissionsList, deleteAdmission } from '../../services/admissionService';
 import { getRHConfig, saveRHConfig, DEFAULT_RH_CONFIG } from '../../services/configService';
 import { downloadAsPDF } from '../../utils/downloadHelper';
 import AdmissionPrintTemplate from './AdmissionPrintTemplate';
@@ -21,6 +21,8 @@ export default function HRDashboard({ onBackToForm }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAdmission, setSelectedAdmission] = useState(null);
   const [previewAttachment, setPreviewAttachment] = useState(null);
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Estado das configurações do RH
   const [rhConfig, setRhConfig] = useState(DEFAULT_RH_CONFIG);
@@ -33,6 +35,20 @@ export default function HRDashboard({ onBackToForm }) {
     const list = await getAdmissionsList();
     setAdmissions(list);
     setLoading(false);
+  };
+
+  const handleDeleteAdmission = async () => {
+    if (!itemToDelete?.id) return;
+    setIsDeleting(true);
+    try {
+      await deleteAdmission(itemToDelete.id);
+      setAdmissions(prev => prev.filter(a => a.id !== itemToDelete.id));
+      setItemToDelete(null);
+    } catch (err) {
+      alert('Erro ao excluir: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const loadConfig = async () => {
@@ -326,13 +342,21 @@ export default function HRDashboard({ onBackToForm }) {
                         )}
                       </div>
 
-                      <div className="pt-4 mt-4 border-t border-slate-100">
+                      <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-2">
                         <button
                           onClick={() => setSelectedAdmission(item)}
-                          className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white font-bold text-xs transition-all active:scale-98"
+                          className="flex-1 flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white font-bold text-xs transition-all active:scale-98"
                         >
                           <Printer className="w-4 h-4" />
                           <span>Ver Ficha Oficial (2 Págs)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setItemToDelete(item)}
+                          className="p-2.5 rounded-xl border border-rose-200 text-rose-500 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 transition-all active:scale-95 flex-shrink-0"
+                          title="Excluir ficha de admissão"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -613,6 +637,61 @@ export default function HRDashboard({ onBackToForm }) {
         onClose={() => setPreviewAttachment(null)}
         fileData={previewAttachment}
       />
+
+      {/* Modal de Confirmação para Excluir Ficha */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-200 shadow-2xl space-y-5 animate-scale-up">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-bold text-slate-900">
+                Excluir Ficha de Admissão?
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                Tem certeza que deseja apagar a ficha de <strong className="text-slate-800">{itemToDelete.nomeFuncionario || 'Funcionário'}</strong>?
+              </p>
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono text-slate-600 inline-block">
+                Protocolo: {itemToDelete.protocolo || 'N/A'}
+              </div>
+              <p className="text-[11px] text-rose-500 font-medium">
+                Esta ação é irreversível e removerá os dados do banco de dados.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                disabled={isDeleting}
+                className="flex-1 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAdmission}
+                disabled={isDeleting}
+                className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold shadow-md shadow-rose-600/25 transition-all disabled:opacity-50 flex items-center justify-center space-x-1.5"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sim, Excluir</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

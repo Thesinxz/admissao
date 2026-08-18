@@ -255,3 +255,26 @@ export async function getAdmissionsList() {
     return [];
   }
 }
+
+/**
+ * Exclui uma ficha de admissão do Firestore e histórico local
+ * @param {string} id - ID do documento no Firestore
+ */
+export async function deleteAdmission(id) {
+  try {
+    if (id) {
+      const { doc, deleteDoc } = await import("firebase/firestore");
+      await deleteDoc(doc(db, "admissoes", id));
+    }
+    // Remove também do histórico local se existir
+    try {
+      const localHistory = JSON.parse(localStorage.getItem('admissoes_locais') || '[]');
+      const filtered = localHistory.filter(item => item.id !== id);
+      localStorage.setItem('admissoes_locais', JSON.stringify(filtered));
+    } catch (e) {}
+    return true;
+  } catch (err) {
+    console.error("Erro ao excluir admissão:", err);
+    throw err;
+  }
+}
