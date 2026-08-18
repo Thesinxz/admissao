@@ -1,5 +1,5 @@
 import { collection, addDoc, serverTimestamp, getDocs, query, orderBy } from "firebase/firestore";
-import { ref, uploadBytes, uploadString, getDownloadURL } from "firebase/storage";
+import { getStorage, ref, uploadBytes, uploadString, getDownloadURL } from "firebase/storage";
 import { db, storage } from "./firebase";
 import { dataURLtoBlob, compressImage } from "../utils/imageCompressor";
 
@@ -21,28 +21,40 @@ const withTimeout = (promise, ms = 6000) => {
 
 /**
  * Upload seguro de um arquivo individual para o Firebase Storage
+ * Suporta automaticamente tanto o bucket novo (.firebasestorage.app) quanto o clássico (.appspot.com)
  */
 async function uploadToFirebaseStorage(protocol, key, item, mimeType) {
-  try {
-    const fileExt = isPdfOrImageExt(item.name) || (mimeType === 'application/pdf' ? 'pdf' : 'jpg');
-    const storagePath = `admissoes/${protocol}/${key}_${Date.now()}.${fileExt}`;
-    const storageRef = ref(storage, storagePath);
-    const metadata = { contentType: mimeType };
+  const fileExt = isPdfOrImageExt(item.name) || (mimeType === 'application/pdf' ? 'pdf' : 'jpg');
+  const storagePath = `admissoes/${protocol}/${key}_${Date.now()}.${fileExt}`;
+  const metadata = { contentType: mimeType };
 
-    // 1. Se for DataURL, usa uploadString oficial do Firebase
-    if (typeof item.url === 'string' && item.url.startsWith('data:')) {
-      const snapshot = await withTimeout(uploadString(storageRef, item.url, 'data_url', metadata), 6000);
-      return await withTimeout(getDownloadURL(snapshot.ref), 4000);
-    }
+  const buckets = [
+    storage,
+    getStorage(storage.app, "gs://contratacao-ae5c1.firebasestorage.app"),
+    getStorage(storage.app, "gs://contratacao-ae5c1.appspot.com")
+  ];
 
-    // 2. Se tiver Blob/File
-    const blobToUpload = item.fileRef || (item.url ? dataURLtoBlob(item.url) : null);
-    if (blobToUpload) {
-      const snapshot = await withTimeout(uploadBytes(storageRef, blobToUpload, metadata), 6000);
-      return await withTimeout(getDownloadURL(snapshot.ref), 4000);
+  for (const stInstance of buckets) {
+    try {
+      const storageRef = ref(stInstance, storagePath);
+
+      // 1. Se for DataURL
+      if (typeof item.url === 'string' && item.url.startsWith('data:')) {
+        const snapshot = await withTimeout(uploadString(storageRef, item.url, 'data_url', metadata), 6000);
+        const downloadUrl = await withTimeout(getDownloadURL(snapshot.ref), 4000);
+        if (downloadUrl) return downloadUrl;
+      }
+
+      // 2. Se tiver Blob/File
+      const blobToUpload = item.fileRef || (item.url ? dataURLtoBlob(item.url) : null);
+      if (blobToUpload) {
+        const snapshot = await withTimeout(uploadBytes(storageRef, blobToUpload, metadata), 6000);
+        const downloadUrl = await withTimeout(getDownloadURL(snapshot.ref), 4000);
+        if (downloadUrl) return downloadUrl;
+      }
+    } catch (err) {
+      // Tenta próximo bucket silenciosamente
     }
-  } catch (err) {
-    console.warn(`Storage indisponível para ${key} (${err.code || err.message})`);
   }
 
   return null;
